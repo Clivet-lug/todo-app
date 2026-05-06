@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -12,10 +13,13 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq" // PostgreSQL driver - the _ means import for side effects
+	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 )
 
+// ============================================================
 // DATA MODELS
+// ============================================================
 type Todo struct {
 	ID          int       `json:"id"`
 	Title       string    `json:"title"`
@@ -32,19 +36,23 @@ type APIResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 	Count   int         `json:"count,omitempty"`
 }
- 
-// DATABASE CONNECTION 
-var db *sql.DB
- 
-// CONNECT TO DATABASE
+
+// ============================================================
+// GLOBAL CONNECTIONS
+// ============================================================
+var db  *sql.DB
+var rdb *redis.Client        // Redis client
+var ctx = context.Background() // Redis needs a context
+
+// ============================================================
+// CONNECT TO POSTGRESQL
+// ============================================================
 func connectDB() {
-	// Load .env file
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	// Build connection string from environment variables
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		os.Getenv("DB_HOST"),
@@ -54,13 +62,11 @@ func connectDB() {
 		os.Getenv("DB_NAME"),
 	)
 
-	// Open the connection
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal("Error connecting to database:", err)
 	}
 
-	// Ping to verify connection is actually working
 	err = db.Ping()
 	if err != nil {
 		log.Fatal("Cannot reach database:", err)
@@ -68,8 +74,30 @@ func connectDB() {
 
 	fmt.Println("✅ Connected to PostgreSQL successfully")
 }
- 
+
+// ============================================================
+// CONNECT TO REDIS
+// ============================================================
+func connectRedis() {
+	rdb = redis.NewClient(&redis.Options{
+		Addr: fmt.Sprintf("%s:%s",
+			os.Getenv("REDIS_HOST"),
+			os.Getenv("REDIS_PORT"),
+		),
+	})
+
+	// Ping Redis to verify connection
+	_, err := rdb.Ping(ctx).Result()
+	if err != nil {
+		log.Fatal("Cannot reach Redis:", err)
+	}
+
+	fmt.Println("✅ Connected to Redis successfully")
+}
+
+// ============================================================
 // CREATE TABLE
+// ============================================================
 func createTable() {
 	query := `
 		CREATE TABLE IF NOT EXISTS todos (
@@ -86,20 +114,21 @@ func createTable() {
 	if err != nil {
 		log.Fatal("Error creating todos table:", err)
 	}
-
 	fmt.Println("✅ Todos table ready")
 }
- 
-// MAIN 
-func main() {
-	// Connect to database first
-	connectDB()
-	defer db.Close() // close connection when server stops
 
-	// Create table if it doesn't exist
+// ============================================================
+// MAIN
+// ============================================================
+func main() {
+	connectDB()
+	defer db.Close()
+
+	connectRedis()
+	defer rdb.Close()
+
 	createTable()
 
-	// Register routes
 	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/todos", todosHandler)
 	http.HandleFunc("/todos/", todoHandler)
@@ -115,8 +144,10 @@ func main() {
 
 	http.ListenAndServe(":9090", nil)
 }
- 
-// HELPERS 
+
+// ============================================================
+// HELPERS
+// ============================================================
 func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -126,16 +157,9 @@ func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// func findTodoIndex(id int) int {
-// 	for i, todo := range todos {
-// 		if todo.ID == id {
-// 			return i
-// 		}
-// 	}
-// 	return -1
-// }
-
-// ROUTE HANDLERS 
+// ============================================================
+// ROUTE HANDLERS
+// ============================================================
 func todosHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		sendJSON(w, http.StatusOK, nil)
@@ -183,26 +207,59 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HEALTH CHECK 
+// ============================================================
+// HEALTH CHECK
+// Checks both PostgreSQL and Redis
+// ============================================================
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	// Also check if database is still reachable
-	err := db.Ping()
-	if err != nil {
+	// Check PostgreSQL
+	if err := db.Ping(); err != nil {
 		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
 			Success: false,
-			Message: "Database unreachable",
+			Message: "PostgreSQL unreachable",
 		})
 		return
 	}
+
+	// Check Redis
+	if _, err := rdb.Ping(ctx).Result(); err != nil {
+		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Message: "Redis unreachable",
+		})
+		return
+	}
+
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
-		Message: "Todo API is healthy and database is connected",
+		Message: "API healthy - PostgreSQL and Redis connected",
 	})
 }
 
+// ============================================================
 // GET ALL TODOS
+// Flow: Check Redis cache first → if miss, query PostgreSQL
+//       and store result in Redis for next time
+// ============================================================
 func getTodos(w http.ResponseWriter, r *http.Request) {
-	// Query database for all todos, newest first
+	cacheKey := "todos:all"
+
+	// Step 1 - Try to get from Redis cache first
+	cached, err := rdb.Get(ctx, cacheKey).Result()
+	if err == nil {
+		// Cache HIT - return cached data directly
+		// This is much faster than hitting the database
+		fmt.Println("📦 Cache HIT - returning from Redis")
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("X-Cache", "HIT") // header so you can see in Postman
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(cached))
+		return
+	}
+
+	// Step 2 - Cache MISS - query PostgreSQL
+	fmt.Println("🔍 Cache MISS - querying PostgreSQL")
 	rows, err := db.Query(`
 		SELECT id, title, description, completed, priority, created_at, updated_at
 		FROM todos
@@ -215,9 +272,8 @@ func getTodos(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer rows.Close() // always close rows when done
+	defer rows.Close()
 
-	// Loop through results and build our slice
 	var todos []Todo
 	for rows.Next() {
 		var todo Todo
@@ -236,20 +292,38 @@ func getTodos(w http.ResponseWriter, r *http.Request) {
 		todos = append(todos, todo)
 	}
 
-	// Return empty array not null if no todos
 	if todos == nil {
 		todos = []Todo{}
 	}
 
-	sendJSON(w, http.StatusOK, APIResponse{
+	response := APIResponse{
 		Success: true,
 		Message: "Todos retrieved successfully",
 		Data:    todos,
 		Count:   len(todos),
-	})
+	}
+
+	// Step 3 - Store in Redis for 30 seconds
+	// Next request within 30s will be served from cache
+	responseJSON, _ := json.Marshal(response)
+	rdb.Set(ctx, cacheKey, responseJSON, 30*time.Second)
+	fmt.Println("💾 Stored in Redis cache for 30 seconds")
+
+	sendJSON(w, http.StatusOK, response)
 }
 
-// GET SINGLE TODO 
+// ============================================================
+// INVALIDATE CACHE
+// Called after create, update, delete so cache stays fresh
+// ============================================================
+func invalidateCache() {
+	rdb.Del(ctx, "todos:all")
+	fmt.Println("🗑️  Cache invalidated")
+}
+
+// ============================================================
+// GET SINGLE TODO
+// ============================================================
 func getTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 	var todo Todo
 
@@ -266,7 +340,6 @@ func getTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 		&todo.UpdatedAt,
 	)
 
-	// sql.ErrNoRows means the todo wasn't found
 	if err == sql.ErrNoRows {
 		sendJSON(w, http.StatusNotFound, APIResponse{
 			Success: false,
@@ -289,7 +362,9 @@ func getTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 	})
 }
 
-// CREATE TODO 
+// ============================================================
+// CREATE TODO
+// ============================================================
 func createTodo(w http.ResponseWriter, r *http.Request) {
 	var input Todo
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -313,8 +388,6 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var todo Todo
-
-	// INSERT and return the created row immediately using RETURNING
 	err := db.QueryRow(`
 		INSERT INTO todos (title, description, priority)
 		VALUES ($1, $2, $3)
@@ -341,6 +414,9 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Clear cache so next GET /todos shows fresh data
+	invalidateCache()
+
 	sendJSON(w, http.StatusCreated, APIResponse{
 		Success: true,
 		Message: "Todo created successfully",
@@ -348,7 +424,9 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UPDATE TODO 
+// ============================================================
+// UPDATE TODO
+// ============================================================
 func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
 	var input Todo
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -360,7 +438,6 @@ func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
 	}
 
 	var todo Todo
-
 	err := db.QueryRow(`
 		UPDATE todos
 		SET title       = COALESCE(NULLIF($1, ''), title),
@@ -401,14 +478,19 @@ func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 
+	// Clear cache
+	invalidateCache()
+
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
 		Message: "Todo updated successfully",
 		Data:    todo,
 	})
 }
- 
+
+// ============================================================
 // DELETE TODO
+// ============================================================
 func deleteTodo(w http.ResponseWriter, r *http.Request, id int) {
 	result, err := db.Exec(`DELETE FROM todos WHERE id = $1`, id)
 	if err != nil {
@@ -419,7 +501,6 @@ func deleteTodo(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 
-	// Check if any row was actually deleted
 	rowsAffected, _ := result.RowsAffected()
 	if rowsAffected == 0 {
 		sendJSON(w, http.StatusNotFound, APIResponse{
@@ -428,6 +509,9 @@ func deleteTodo(w http.ResponseWriter, r *http.Request, id int) {
 		})
 		return
 	}
+
+	// Clear cache
+	invalidateCache()
 
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
