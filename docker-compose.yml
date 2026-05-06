@@ -9,16 +9,35 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tododb
     ports:
-      - "5433:5432"  # your machine port : container port
+      - "5433:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data  # persist data between restarts
+      - postgres_data:/var/lib/postgresql/data
 
   # Redis Cache
   redis:
     image: redis:7
     container_name: todo_redis
     ports:
-      - "6379:6379"  # default Redis port
+      - "6379:6379"
+
+  # Go Backend API
+  backend:
+    build: ./backend
+    container_name: todo_backend
+    ports:
+      - "9090:9090"
+    environment:
+      DB_HOST: postgres      # use container name not localhost!
+      DB_PORT: 5432          # internal Docker port not 5433
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: tododb
+      REDIS_HOST: redis      # use container name not localhost!
+      REDIS_PORT: 6379
+      PORT: 9090
+    depends_on:
+      - postgres
+      - redis
 
 volumes:
   postgres_data:
