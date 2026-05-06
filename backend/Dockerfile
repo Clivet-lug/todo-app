@@ -14,7 +14,7 @@ FROM alpine:latest
 WORKDIR /app
 
 COPY --from=builder /app/main .
-COPY .env .
+# COPY .env .
 
 EXPOSE 9090
 
