@@ -40,18 +40,22 @@ type APIResponse struct {
 // ============================================================
 // GLOBAL CONNECTIONS
 // ============================================================
-var db  *sql.DB
-var rdb *redis.Client        // Redis client
+var db *sql.DB
+var rdb *redis.Client          // Redis client
 var ctx = context.Background() // Redis needs a context
 
 // ============================================================
 // CONNECT TO POSTGRESQL
 // ============================================================
 func connectDB() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
+	// err := godotenv.Load()
+	// if err != nil {
+	// 	log.Fatal("Error loading .env file")
+	// }
+
+	// Load .env file if it exists (local dev)
+	// On Railway/production, env vars are injected directly
+	godotenv.Load()
 
 	connStr := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
@@ -239,7 +243,9 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 // ============================================================
 // GET ALL TODOS
 // Flow: Check Redis cache first → if miss, query PostgreSQL
-//       and store result in Redis for next time
+//
+//	and store result in Redis for next time
+//
 // ============================================================
 func getTodos(w http.ResponseWriter, r *http.Request) {
 	cacheKey := "todos:all"
