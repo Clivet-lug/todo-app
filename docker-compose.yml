@@ -1,0 +1,24 @@
+services:
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16
+    container_name: todo_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tododb
+    ports:
+      - "5432:5432"  # your machine port : container port
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # persist data between restarts
+
+  # Redis Cache
+  redis:
+    image: redis:7
+    container_name: todo_redis
+    ports:
+      - "6379:6379"  # default Redis port
+
+volumes:
+  postgres_data:

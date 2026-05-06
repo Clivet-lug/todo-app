@@ -1,28 +1,31 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq" // PostgreSQL driver - the _ means import for side effects
 )
 
-// DATA MODELS 
-// Todo represents a single todo item
+// DATA MODELS
 type Todo struct {
 	ID          int       `json:"id"`
 	Title       string    `json:"title"`
 	Description string    `json:"description"`
 	Completed   bool      `json:"completed"`
-	Priority    string    `json:"priority"` // low, medium, high
+	Priority    string    `json:"priority"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
-// Standard wrapper for all responses
-// Every endpoint returns this same structure
 type APIResponse struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message"`
@@ -30,47 +33,76 @@ type APIResponse struct {
 	Count   int         `json:"count,omitempty"`
 }
  
-// IN-MEMORY STORAGE 
-var todos = []Todo{
-	{
-		ID:          1,
-		Title:       "Learn Go",
-		Description: "Study Go fundamentals and build APIs",
-		Completed:   true,
-		Priority:    "high",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	},
-	{
-		ID:          2,
-		Title:       "Learn PostgreSQL",
-		Description: "Connect Go to a real database",
-		Completed:   false,
-		Priority:    "high",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	},
-	{
-		ID:          3,
-		Title:       "Learn Docker",
-		Description: "Containerize the todo app",
-		Completed:   false,
-		Priority:    "medium",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	},
+// DATABASE CONNECTION 
+var db *sql.DB
+ 
+// CONNECT TO DATABASE
+func connectDB() {
+	// Load .env file
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	// Build connection string from environment variables
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+		os.Getenv("DB_USER"),
+		os.Getenv("DB_PASSWORD"),
+		os.Getenv("DB_NAME"),
+	)
+
+	// Open the connection
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal("Error connecting to database:", err)
+	}
+
+	// Ping to verify connection is actually working
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("Cannot reach database:", err)
+	}
+
+	fmt.Println("✅ Connected to PostgreSQL successfully")
 }
+ 
+// CREATE TABLE
+func createTable() {
+	query := `
+		CREATE TABLE IF NOT EXISTS todos (
+			id          SERIAL PRIMARY KEY,
+			title       VARCHAR(255) NOT NULL,
+			description TEXT,
+			completed   BOOLEAN DEFAULT FALSE,
+			priority    VARCHAR(50) DEFAULT 'medium',
+			created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)
+	`
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Fatal("Error creating todos table:", err)
+	}
 
-var nextID = 4
-
-// MAIN - Register routes and start server 
+	fmt.Println("✅ Todos table ready")
+}
+ 
+// MAIN 
 func main() {
-	// Health check
-	http.HandleFunc("/health", healthCheck)
+	// Connect to database first
+	connectDB()
+	defer db.Close() // close connection when server stops
 
-	// Todo routes - we check the HTTP method inside each handler
+	// Create table if it doesn't exist
+	createTable()
+
+	// Register routes
+	http.HandleFunc("/health", healthCheck)
 	http.HandleFunc("/todos", todosHandler)
-	http.HandleFunc("/todos/", todoHandler) // handles /todos/{id}
+	http.HandleFunc("/todos/", todoHandler)
 
 	fmt.Println("🚀 Todo API running on http://localhost:9090")
 	fmt.Println("📋 Endpoints:")
@@ -83,13 +115,10 @@ func main() {
 
 	http.ListenAndServe(":9090", nil)
 }
-
  
-// HELPERS
-// sendJSON writes a JSON response with the correct headers
+// HELPERS 
 func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
-	// Allow requests from our Next.js frontend
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -97,33 +126,21 @@ func sendJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// findTodoIndex finds a todo by ID and returns its index, -1 if not found
-func findTodoIndex(id int) int {
-	for i, todo := range todos {
-		if todo.ID == id {
-			return i
-		}
-	}
-	return -1
-}
+// func findTodoIndex(id int) int {
+// 	for i, todo := range todos {
+// 		if todo.ID == id {
+// 			return i
+// 		}
+// 	}
+// 	return -1
+// }
 
-// HEALTH CHECK
-// GET /health 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	sendJSON(w, http.StatusOK, APIResponse{
-		Success: true,
-		Message: "Todo API is healthy",
-	})
-}
- 
-// TODOS HANDLER - routes GET /todos and POST /todos 
+// ROUTE HANDLERS 
 func todosHandler(w http.ResponseWriter, r *http.Request) {
-	// Handle preflight OPTIONS request (needed for Next.js)
 	if r.Method == http.MethodOptions {
 		sendJSON(w, http.StatusOK, nil)
 		return
 	}
-
 	switch r.Method {
 	case http.MethodGet:
 		getTodos(w, r)
@@ -137,14 +154,11 @@ func todosHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SINGLE TODO HANDLER - routes GET/PUT/DELETE /todos/{id}
 func todoHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		sendJSON(w, http.StatusOK, nil)
 		return
 	}
-
-	// Extract ID from URL e.g. /todos/3 → "3"
 	idStr := strings.TrimPrefix(r.URL.Path, "/todos/")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -154,7 +168,6 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
 	switch r.Method {
 	case http.MethodGet:
 		getTodoByID(w, r, id)
@@ -170,9 +183,64 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HEALTH CHECK 
+func healthCheck(w http.ResponseWriter, r *http.Request) {
+	// Also check if database is still reachable
+	err := db.Ping()
+	if err != nil {
+		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Message: "Database unreachable",
+		})
+		return
+	}
+	sendJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: "Todo API is healthy and database is connected",
+	})
+}
+
 // GET ALL TODOS
-// GET /todos 
 func getTodos(w http.ResponseWriter, r *http.Request) {
+	// Query database for all todos, newest first
+	rows, err := db.Query(`
+		SELECT id, title, description, completed, priority, created_at, updated_at
+		FROM todos
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Message: "Error fetching todos",
+		})
+		return
+	}
+	defer rows.Close() // always close rows when done
+
+	// Loop through results and build our slice
+	var todos []Todo
+	for rows.Next() {
+		var todo Todo
+		err := rows.Scan(
+			&todo.ID,
+			&todo.Title,
+			&todo.Description,
+			&todo.Completed,
+			&todo.Priority,
+			&todo.CreatedAt,
+			&todo.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		todos = append(todos, todo)
+	}
+
+	// Return empty array not null if no todos
+	if todos == nil {
+		todos = []Todo{}
+	}
+
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
 		Message: "Todos retrieved successfully",
@@ -181,14 +249,35 @@ func getTodos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GET SINGLE TODO
+// GET SINGLE TODO 
 func getTodoByID(w http.ResponseWriter, r *http.Request, id int) {
-	index := findTodoIndex(id)
+	var todo Todo
 
-	if index == -1 {
+	err := db.QueryRow(`
+		SELECT id, title, description, completed, priority, created_at, updated_at
+		FROM todos WHERE id = $1
+	`, id).Scan(
+		&todo.ID,
+		&todo.Title,
+		&todo.Description,
+		&todo.Completed,
+		&todo.Priority,
+		&todo.CreatedAt,
+		&todo.UpdatedAt,
+	)
+
+	// sql.ErrNoRows means the todo wasn't found
+	if err == sql.ErrNoRows {
 		sendJSON(w, http.StatusNotFound, APIResponse{
 			Success: false,
 			Message: fmt.Sprintf("Todo with ID %d not found", id),
+		})
+		return
+	}
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Message: "Error fetching todo",
 		})
 		return
 	}
@@ -196,13 +285,12 @@ func getTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
 		Message: "Todo retrieved successfully",
-		Data:    todos[index],
+		Data:    todo,
 	})
 }
- 
+
 // CREATE TODO 
 func createTodo(w http.ResponseWriter, r *http.Request) {
-	// Decode the request body into a Todo struct
 	var input Todo
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		sendJSON(w, http.StatusBadRequest, APIResponse{
@@ -212,7 +300,6 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate required fields
 	if strings.TrimSpace(input.Title) == "" {
 		sendJSON(w, http.StatusBadRequest, APIResponse{
 			Success: false,
@@ -221,44 +308,48 @@ func createTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set default priority if not provided
 	if input.Priority == "" {
 		input.Priority = "medium"
 	}
 
-	// Build the new todo
-	newTodo := Todo{
-		ID:          nextID,
-		Title:       strings.TrimSpace(input.Title),
-		Description: strings.TrimSpace(input.Description),
-		Completed:   false,
-		Priority:    input.Priority,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-	}
+	var todo Todo
 
-	todos = append(todos, newTodo)
-	nextID++
+	// INSERT and return the created row immediately using RETURNING
+	err := db.QueryRow(`
+		INSERT INTO todos (title, description, priority)
+		VALUES ($1, $2, $3)
+		RETURNING id, title, description, completed, priority, created_at, updated_at
+	`,
+		strings.TrimSpace(input.Title),
+		strings.TrimSpace(input.Description),
+		input.Priority,
+	).Scan(
+		&todo.ID,
+		&todo.Title,
+		&todo.Description,
+		&todo.Completed,
+		&todo.Priority,
+		&todo.CreatedAt,
+		&todo.UpdatedAt,
+	)
 
-	sendJSON(w, http.StatusCreated, APIResponse{
-		Success: true,
-		Message: "Todo created successfully",
-		Data:    newTodo,
-	})
-}
-
-// UPDATE TODO
-func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
-	index := findTodoIndex(id)
-
-	if index == -1 {
-		sendJSON(w, http.StatusNotFound, APIResponse{
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
 			Success: false,
-			Message: fmt.Sprintf("Todo with ID %d not found", id),
+			Message: "Error creating todo",
 		})
 		return
 	}
 
+	sendJSON(w, http.StatusCreated, APIResponse{
+		Success: true,
+		Message: "Todo created successfully",
+		Data:    todo,
+	})
+}
+
+// UPDATE TODO 
+func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
 	var input Todo
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		sendJSON(w, http.StatusBadRequest, APIResponse{
@@ -268,46 +359,75 @@ func updateTodo(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 
-	// Update only provided fields, keep existing values
-	existing := todos[index]
+	var todo Todo
 
-	if strings.TrimSpace(input.Title) != "" {
-		existing.Title = strings.TrimSpace(input.Title)
-	}
-	if input.Description != "" {
-		existing.Description = input.Description
-	}
-	if input.Priority != "" {
-		existing.Priority = input.Priority
-	}
+	err := db.QueryRow(`
+		UPDATE todos
+		SET title       = COALESCE(NULLIF($1, ''), title),
+		    description = COALESCE(NULLIF($2, ''), description),
+		    completed   = $3,
+		    priority    = COALESCE(NULLIF($4, ''), priority),
+		    updated_at  = CURRENT_TIMESTAMP
+		WHERE id = $5
+		RETURNING id, title, description, completed, priority, created_at, updated_at
+	`,
+		input.Title,
+		input.Description,
+		input.Completed,
+		input.Priority,
+		id,
+	).Scan(
+		&todo.ID,
+		&todo.Title,
+		&todo.Description,
+		&todo.Completed,
+		&todo.Priority,
+		&todo.CreatedAt,
+		&todo.UpdatedAt,
+	)
 
-	// Completed can be explicitly set to true or false
-	existing.Completed = input.Completed
-	existing.UpdatedAt = time.Now()
-
-	todos[index] = existing
-
-	sendJSON(w, http.StatusOK, APIResponse{
-		Success: true,
-		Message: "Todo updated successfully",
-		Data:    existing,
-	})
-}
-
-// DELETE TODO
-// DELETE /todos/{id} 
-func deleteTodo(w http.ResponseWriter, r *http.Request, id int) {
-	index := findTodoIndex(id)
-
-	if index == -1 {
+	if err == sql.ErrNoRows {
 		sendJSON(w, http.StatusNotFound, APIResponse{
 			Success: false,
 			Message: fmt.Sprintf("Todo with ID %d not found", id),
 		})
 		return
 	}
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Message: "Error updating todo",
+		})
+		return
+	}
 
-	todos = append(todos[:index], todos[index+1:]...)
+	sendJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: "Todo updated successfully",
+		Data:    todo,
+	})
+}
+ 
+// DELETE TODO
+func deleteTodo(w http.ResponseWriter, r *http.Request, id int) {
+	result, err := db.Exec(`DELETE FROM todos WHERE id = $1`, id)
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Message: "Error deleting todo",
+		})
+		return
+	}
+
+	// Check if any row was actually deleted
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		sendJSON(w, http.StatusNotFound, APIResponse{
+			Success: false,
+			Message: fmt.Sprintf("Todo with ID %d not found", id),
+		})
+		return
+	}
 
 	sendJSON(w, http.StatusOK, APIResponse{
 		Success: true,
