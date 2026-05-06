@@ -1,0 +1,13 @@
+# Go
+backend/tmp/
+backend/*.exe
+
+# Next.js
+frontend/.next/
+frontend/node_modules/
+
+# Environment variables - NEVER commit these
+.env
+.env.local
+backend/.env
+frontend/.env.local
