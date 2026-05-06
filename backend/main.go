@@ -48,35 +48,30 @@ var ctx = context.Background() // Redis needs a context
 // CONNECT TO POSTGRESQL
 // ============================================================
 func connectDB() {
-	// err := godotenv.Load()
-	// if err != nil {
-	// 	log.Fatal("Error loading .env file")
-	// }
+    // Load .env file if it exists (local dev only)
+    godotenv.Load()
 
-	// Load .env file if it exists (local dev)
-	// On Railway/production, env vars are injected directly
-	godotenv.Load()
+    connStr := fmt.Sprintf(
+        "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+        os.Getenv("DB_HOST"),
+        os.Getenv("DB_PORT"),
+        os.Getenv("DB_USER"),
+        os.Getenv("DB_PASSWORD"),
+        os.Getenv("DB_NAME"),
+    )
 
-	connStr := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_NAME"),
-	)
+    var err error  // declare err properly here
+    db, err = sql.Open("postgres", connStr)
+    if err != nil {
+        log.Fatal("Error connecting to database:", err)
+    }
 
-	db, err = sql.Open("postgres", connStr)
-	if err != nil {
-		log.Fatal("Error connecting to database:", err)
-	}
+    err = db.Ping()
+    if err != nil {
+        log.Fatal("Cannot reach database:", err)
+    }
 
-	err = db.Ping()
-	if err != nil {
-		log.Fatal("Cannot reach database:", err)
-	}
-
-	fmt.Println("✅ Connected to PostgreSQL successfully")
+    fmt.Println("✅ Connected to PostgreSQL successfully")
 }
 
 // ============================================================
@@ -124,29 +119,52 @@ func createTable() {
 // ============================================================
 // MAIN
 // ============================================================
+// func main() {
+// 	connectDB()
+// 	defer db.Close()
+
+// 	connectRedis()
+// 	defer rdb.Close()
+
+// 	createTable()
+
+// 	http.HandleFunc("/health", healthCheck)
+// 	http.HandleFunc("/todos", todosHandler)
+// 	http.HandleFunc("/todos/", todoHandler)
+
+// 	fmt.Println("🚀 Todo API running on http://localhost:9090")
+// 	fmt.Println("📋 Endpoints:")
+// 	fmt.Println("   GET    /health")
+// 	fmt.Println("   GET    /todos")
+// 	fmt.Println("   POST   /todos")
+// 	fmt.Println("   GET    /todos/{id}")
+// 	fmt.Println("   PUT    /todos/{id}")
+// 	fmt.Println("   DELETE /todos/{id}")
+
+// 	http.ListenAndServe(":9090", nil)
+// }
+
 func main() {
-	connectDB()
-	defer db.Close()
+    connectDB()
+    defer db.Close()
 
-	connectRedis()
-	defer rdb.Close()
+    connectRedis()
+    defer rdb.Close()
 
-	createTable()
+    createTable()
 
-	http.HandleFunc("/health", healthCheck)
-	http.HandleFunc("/todos", todosHandler)
-	http.HandleFunc("/todos/", todoHandler)
+    http.HandleFunc("/health", healthCheck)
+    http.HandleFunc("/todos", todosHandler)
+    http.HandleFunc("/todos/", todoHandler)
 
-	fmt.Println("🚀 Todo API running on http://localhost:9090")
-	fmt.Println("📋 Endpoints:")
-	fmt.Println("   GET    /health")
-	fmt.Println("   GET    /todos")
-	fmt.Println("   POST   /todos")
-	fmt.Println("   GET    /todos/{id}")
-	fmt.Println("   PUT    /todos/{id}")
-	fmt.Println("   DELETE /todos/{id}")
+    // Read port from environment - Railway injects PORT automatically
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "9090" // fallback for local dev
+    }
 
-	http.ListenAndServe(":9090", nil)
+    fmt.Println("🚀 Todo API running on http://localhost:" + port)
+    http.ListenAndServe(":"+port, nil)
 }
 
 // ============================================================
