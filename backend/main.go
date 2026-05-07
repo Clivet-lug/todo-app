@@ -257,28 +257,27 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 // Checks both PostgreSQL and Redis
 // ============================================================
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-	// Check PostgreSQL
-	if err := db.Ping(); err != nil {
-		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
-			Success: false,
-			Message: "PostgreSQL unreachable",
-		})
-		return
-	}
+    if err := db.Ping(); err != nil {
+        sendJSON(w, http.StatusServiceUnavailable, APIResponse{
+            Success: false,
+            Message: "PostgreSQL unreachable",
+        })
+        return
+    }
 
-	// Check Redis
-	if _, err := rdb.Ping(ctx).Result(); err != nil {
-		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
-			Success: false,
-			Message: "Redis unreachable",
-		})
-		return
-	}
+    message := "API healthy - PostgreSQL connected"
+    
+    // Only check Redis if available
+    if rdb != nil {
+        if _, err := rdb.Ping(ctx).Result(); err == nil {
+            message = "API healthy - PostgreSQL and Redis connected"
+        }
+    }
 
-	sendJSON(w, http.StatusOK, APIResponse{
-		Success: true,
-		Message: "API healthy - PostgreSQL and Redis connected",
-	})
+    sendJSON(w, http.StatusOK, APIResponse{
+        Success: true,
+        Message: message,
+    })
 }
 
 // ============================================================
