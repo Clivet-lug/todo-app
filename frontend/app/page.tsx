@@ -19,7 +19,8 @@ type Todo = {
 // ============================================================
 // API URL - points to our Go backend
 // ============================================================
-const API_URL = "http://localhost:9090";
+// const API_URL = "http://localhost:9090";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:9090";
 
 // ============================================================
 // MAIN PAGE COMPONENT
