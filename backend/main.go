@@ -48,73 +48,73 @@ var ctx = context.Background() // Redis needs a context
 // CONNECT TO POSTGRESQL
 // ============================================================
 func connectDB() {
-    godotenv.Load()
+	godotenv.Load()
 
-    // Railway provides DATABASE_URL automatically
-    // Fall back to individual variables for local dev
-    connStr := os.Getenv("DATABASE_URL")
-    
-    if connStr == "" {
-        // Local dev - build from individual variables
-        connStr = fmt.Sprintf(
-            "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-            os.Getenv("DB_HOST"),
-            os.Getenv("DB_PORT"),
-            os.Getenv("DB_USER"),
-            os.Getenv("DB_PASSWORD"),
-            os.Getenv("DB_NAME"),
-        )
-    }
+	// Railway provides DATABASE_URL automatically
+	// Fall back to individual variables for local dev
+	connStr := os.Getenv("DATABASE_URL")
 
-    var err error
-    db, err = sql.Open("postgres", connStr)
-    if err != nil {
-        log.Fatal("Error connecting to database:", err)
-    }
+	if connStr == "" {
+		// Local dev - build from individual variables
+		connStr = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
+			os.Getenv("DB_USER"),
+			os.Getenv("DB_PASSWORD"),
+			os.Getenv("DB_NAME"),
+		)
+	}
 
-    err = db.Ping()
-    if err != nil {
-        log.Fatal("Cannot reach database:", err)
-    }
+	var err error
+	db, err = sql.Open("postgres", connStr)
+	if err != nil {
+		log.Fatal("Error connecting to database:", err)
+	}
 
-    fmt.Println("✅ Connected to PostgreSQL successfully")
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("Cannot reach database:", err)
+	}
+
+	fmt.Println("✅ Connected to PostgreSQL successfully")
 }
 
 // ============================================================
 // CONNECT TO REDIS
 // ============================================================
 func connectRedis() {
-    redisURL := os.Getenv("REDIS_URL")
+	redisURL := os.Getenv("REDIS_URL")
 
-    var opts *redis.Options
-    var err error
+	var opts *redis.Options
+	var err error
 
-    if redisURL != "" {
-        opts, err = redis.ParseURL(redisURL)
-        if err != nil {
-            fmt.Println("⚠️ Cannot parse Redis URL, running without cache")
-            return
-        }
-    } else {
-        opts = &redis.Options{
-            Addr: fmt.Sprintf("%s:%s",
-                os.Getenv("REDIS_HOST"),
-                os.Getenv("REDIS_PORT"),
-            ),
-        }
-    }
+	if redisURL != "" {
+		opts, err = redis.ParseURL(redisURL)
+		if err != nil {
+			fmt.Println("⚠️ Cannot parse Redis URL, running without cache")
+			return
+		}
+	} else {
+		opts = &redis.Options{
+			Addr: fmt.Sprintf("%s:%s",
+				os.Getenv("REDIS_HOST"),
+				os.Getenv("REDIS_PORT"),
+			),
+		}
+	}
 
-    rdb = redis.NewClient(opts)
+	rdb = redis.NewClient(opts)
 
-    _, err = rdb.Ping(ctx).Result()
-    if err != nil {
-        // Don't crash - just run without Redis
-        fmt.Println("⚠️ Redis unavailable, running without cache")
-        rdb = nil
-        return
-    }
+	_, err = rdb.Ping(ctx).Result()
+	if err != nil {
+		// Don't crash - just run without Redis
+		fmt.Println("⚠️ Redis unavailable, running without cache")
+		rdb = nil
+		return
+	}
 
-    fmt.Println("✅ Connected to Redis successfully")
+	fmt.Println("✅ Connected to Redis successfully")
 }
 
 // ============================================================
@@ -168,38 +168,40 @@ func createTable() {
 // }
 
 func main() {
-    connectDB()
-    defer db.Close()
+	connectDB()
+	defer db.Close()
 
-    connectRedis()
-    defer rdb.Close()
+	connectRedis()
+	if rdb != nil {
+		defer rdb.Close()
+	}
 
-    createTable()
+	createTable()
 
-    http.HandleFunc("/health", healthCheck)
-    http.HandleFunc("/todos", todosHandler)
-    http.HandleFunc("/todos/", todoHandler)
+	http.HandleFunc("/health", healthCheck)
+	http.HandleFunc("/todos", todosHandler)
+	http.HandleFunc("/todos/", todoHandler)
 
-    // Read port from environment - Railway injects PORT automatically
-    port := os.Getenv("PORT")
-    if port == "" {
-        port = "9090" // fallback for local dev
-    }
+	// Read port from environment - Railway injects PORT automatically
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "9090" // fallback for local dev
+	}
 
-    fmt.Println("🚀 Todo API running on http://localhost:" + port)
-    http.ListenAndServe(":"+port, nil)
+	fmt.Println("🚀 Todo API running on http://localhost:" + port)
+	http.ListenAndServe(":"+port, nil)
 }
 
 // ============================================================
 // HELPERS
 // ============================================================
 func sendJSON(w http.ResponseWriter, status int, data interface{}) {
-    w.Header().Set("Content-Type", "application/json")
-    w.Header().Set("Access-Control-Allow-Origin", "https://todo-app-sable-zeta-21.vercel.app")
-    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-    w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-    w.WriteHeader(status)
-    json.NewEncoder(w).Encode(data)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "https://todo-app-sable-zeta-21.vercel.app")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
 }
 
 // ============================================================
@@ -257,27 +259,27 @@ func todoHandler(w http.ResponseWriter, r *http.Request) {
 // Checks both PostgreSQL and Redis
 // ============================================================
 func healthCheck(w http.ResponseWriter, r *http.Request) {
-    if err := db.Ping(); err != nil {
-        sendJSON(w, http.StatusServiceUnavailable, APIResponse{
-            Success: false,
-            Message: "PostgreSQL unreachable",
-        })
-        return
-    }
+	if err := db.Ping(); err != nil {
+		sendJSON(w, http.StatusServiceUnavailable, APIResponse{
+			Success: false,
+			Message: "PostgreSQL unreachable",
+		})
+		return
+	}
 
-    message := "API healthy - PostgreSQL connected"
-    
-    // Only check Redis if available
-    if rdb != nil {
-        if _, err := rdb.Ping(ctx).Result(); err == nil {
-            message = "API healthy - PostgreSQL and Redis connected"
-        }
-    }
+	message := "API healthy - PostgreSQL connected"
 
-    sendJSON(w, http.StatusOK, APIResponse{
-        Success: true,
-        Message: message,
-    })
+	// Only check Redis if available
+	if rdb != nil {
+		if _, err := rdb.Ping(ctx).Result(); err == nil {
+			message = "API healthy - PostgreSQL and Redis connected"
+		}
+	}
+
+	sendJSON(w, http.StatusOK, APIResponse{
+		Success: true,
+		Message: message,
+	})
 }
 
 // ============================================================
@@ -288,73 +290,73 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 //
 // ============================================================
 func getTodos(w http.ResponseWriter, r *http.Request) {
-    cacheKey := "todos:all"
+	cacheKey := "todos:all"
 
-    // Only use cache if Redis is available
-    if rdb != nil {
-        cached, err := rdb.Get(ctx, cacheKey).Result()
-        if err == nil {
-            fmt.Println("📦 Cache HIT - returning from Redis")
-            w.Header().Set("Content-Type", "application/json")
-            w.Header().Set("Access-Control-Allow-Origin", "*")
-            w.Header().Set("X-Cache", "HIT")
-            w.WriteHeader(http.StatusOK)
-            w.Write([]byte(cached))
-            return
-        }
-    }
+	// Only use cache if Redis is available
+	if rdb != nil {
+		cached, err := rdb.Get(ctx, cacheKey).Result()
+		if err == nil {
+			fmt.Println("📦 Cache HIT - returning from Redis")
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("X-Cache", "HIT")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(cached))
+			return
+		}
+	}
 
-    fmt.Println("🔍 Querying PostgreSQL")
-    rows, err := db.Query(`
+	fmt.Println("🔍 Querying PostgreSQL")
+	rows, err := db.Query(`
         SELECT id, title, description, completed, priority, created_at, updated_at
         FROM todos
         ORDER BY created_at DESC
     `)
-    if err != nil {
-        sendJSON(w, http.StatusInternalServerError, APIResponse{
-            Success: false,
-            Message: "Error fetching todos",
-        })
-        return
-    }
-    defer rows.Close()
+	if err != nil {
+		sendJSON(w, http.StatusInternalServerError, APIResponse{
+			Success: false,
+			Message: "Error fetching todos",
+		})
+		return
+	}
+	defer rows.Close()
 
-    var todos []Todo
-    for rows.Next() {
-        var todo Todo
-        err := rows.Scan(
-            &todo.ID,
-            &todo.Title,
-            &todo.Description,
-            &todo.Completed,
-            &todo.Priority,
-            &todo.CreatedAt,
-            &todo.UpdatedAt,
-        )
-        if err != nil {
-            continue
-        }
-        todos = append(todos, todo)
-    }
+	var todos []Todo
+	for rows.Next() {
+		var todo Todo
+		err := rows.Scan(
+			&todo.ID,
+			&todo.Title,
+			&todo.Description,
+			&todo.Completed,
+			&todo.Priority,
+			&todo.CreatedAt,
+			&todo.UpdatedAt,
+		)
+		if err != nil {
+			continue
+		}
+		todos = append(todos, todo)
+	}
 
-    if todos == nil {
-        todos = []Todo{}
-    }
+	if todos == nil {
+		todos = []Todo{}
+	}
 
-    response := APIResponse{
-        Success: true,
-        Message: "Todos retrieved successfully",
-        Data:    todos,
-        Count:   len(todos),
-    }
+	response := APIResponse{
+		Success: true,
+		Message: "Todos retrieved successfully",
+		Data:    todos,
+		Count:   len(todos),
+	}
 
-    // Only cache if Redis available
-    if rdb != nil {
-        responseJSON, _ := json.Marshal(response)
-        rdb.Set(ctx, cacheKey, responseJSON, 30*time.Second)
-    }
+	// Only cache if Redis available
+	if rdb != nil {
+		responseJSON, _ := json.Marshal(response)
+		rdb.Set(ctx, cacheKey, responseJSON, 30*time.Second)
+	}
 
-    sendJSON(w, http.StatusOK, response)
+	sendJSON(w, http.StatusOK, response)
 }
 
 // ============================================================
@@ -362,10 +364,10 @@ func getTodos(w http.ResponseWriter, r *http.Request) {
 // Called after create, update, delete so cache stays fresh
 // ============================================================
 func invalidateCache() {
-    if rdb != nil {
-        rdb.Del(ctx, "todos:all")
-        fmt.Println("🗑️ Cache invalidated")
-    }
+	if rdb != nil {
+		rdb.Del(ctx, "todos:all")
+		fmt.Println("🗑️ Cache invalidated")
+	}
 }
 
 // ============================================================
