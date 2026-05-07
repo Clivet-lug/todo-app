@@ -84,20 +84,35 @@ func connectDB() {
 // CONNECT TO REDIS
 // ============================================================
 func connectRedis() {
-	rdb = redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:%s",
-			os.Getenv("REDIS_HOST"),
-			os.Getenv("REDIS_PORT"),
-		),
-	})
+    // Use REDIS_URL if available (Railway)
+    redisURL := os.Getenv("REDIS_URL")
+    
+    var opts *redis.Options
+    var err error
+    
+    if redisURL != "" {
+        opts, err = redis.ParseURL(redisURL)
+        if err != nil {
+            log.Fatal("Cannot parse Redis URL:", err)
+        }
+    } else {
+        // Local dev
+        opts = &redis.Options{
+            Addr: fmt.Sprintf("%s:%s",
+                os.Getenv("REDIS_HOST"),
+                os.Getenv("REDIS_PORT"),
+            ),
+        }
+    }
 
-	// Ping Redis to verify connection
-	_, err := rdb.Ping(ctx).Result()
-	if err != nil {
-		log.Fatal("Cannot reach Redis:", err)
-	}
+    rdb = redis.NewClient(opts)
 
-	fmt.Println("✅ Connected to Redis successfully")
+    _, err = rdb.Ping(ctx).Result()
+    if err != nil {
+        log.Fatal("Cannot reach Redis:", err)
+    }
+
+    fmt.Println("✅ Connected to Redis successfully")
 }
 
 // ============================================================
