@@ -84,19 +84,18 @@ func connectDB() {
 // CONNECT TO REDIS
 // ============================================================
 func connectRedis() {
-    // Use REDIS_URL if available (Railway)
     redisURL := os.Getenv("REDIS_URL")
-    
+
     var opts *redis.Options
     var err error
-    
+
     if redisURL != "" {
         opts, err = redis.ParseURL(redisURL)
         if err != nil {
-            log.Fatal("Cannot parse Redis URL:", err)
+            fmt.Println("⚠️ Cannot parse Redis URL, running without cache")
+            return
         }
     } else {
-        // Local dev
         opts = &redis.Options{
             Addr: fmt.Sprintf("%s:%s",
                 os.Getenv("REDIS_HOST"),
@@ -109,7 +108,10 @@ func connectRedis() {
 
     _, err = rdb.Ping(ctx).Result()
     if err != nil {
-        log.Fatal("Cannot reach Redis:", err)
+        // Don't crash - just run without Redis
+        fmt.Println("⚠️ Redis unavailable, running without cache")
+        rdb = nil
+        return
     }
 
     fmt.Println("✅ Connected to Redis successfully")
@@ -287,74 +289,73 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 //
 // ============================================================
 func getTodos(w http.ResponseWriter, r *http.Request) {
-	cacheKey := "todos:all"
+    cacheKey := "todos:all"
 
-	// Step 1 - Try to get from Redis cache first
-	cached, err := rdb.Get(ctx, cacheKey).Result()
-	if err == nil {
-		// Cache HIT - return cached data directly
-		// This is much faster than hitting the database
-		fmt.Println("📦 Cache HIT - returning from Redis")
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("X-Cache", "HIT") // header so you can see in Postman
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(cached))
-		return
-	}
+    // Only use cache if Redis is available
+    if rdb != nil {
+        cached, err := rdb.Get(ctx, cacheKey).Result()
+        if err == nil {
+            fmt.Println("📦 Cache HIT - returning from Redis")
+            w.Header().Set("Content-Type", "application/json")
+            w.Header().Set("Access-Control-Allow-Origin", "*")
+            w.Header().Set("X-Cache", "HIT")
+            w.WriteHeader(http.StatusOK)
+            w.Write([]byte(cached))
+            return
+        }
+    }
 
-	// Step 2 - Cache MISS - query PostgreSQL
-	fmt.Println("🔍 Cache MISS - querying PostgreSQL")
-	rows, err := db.Query(`
-		SELECT id, title, description, completed, priority, created_at, updated_at
-		FROM todos
-		ORDER BY created_at DESC
-	`)
-	if err != nil {
-		sendJSON(w, http.StatusInternalServerError, APIResponse{
-			Success: false,
-			Message: "Error fetching todos",
-		})
-		return
-	}
-	defer rows.Close()
+    fmt.Println("🔍 Querying PostgreSQL")
+    rows, err := db.Query(`
+        SELECT id, title, description, completed, priority, created_at, updated_at
+        FROM todos
+        ORDER BY created_at DESC
+    `)
+    if err != nil {
+        sendJSON(w, http.StatusInternalServerError, APIResponse{
+            Success: false,
+            Message: "Error fetching todos",
+        })
+        return
+    }
+    defer rows.Close()
 
-	var todos []Todo
-	for rows.Next() {
-		var todo Todo
-		err := rows.Scan(
-			&todo.ID,
-			&todo.Title,
-			&todo.Description,
-			&todo.Completed,
-			&todo.Priority,
-			&todo.CreatedAt,
-			&todo.UpdatedAt,
-		)
-		if err != nil {
-			continue
-		}
-		todos = append(todos, todo)
-	}
+    var todos []Todo
+    for rows.Next() {
+        var todo Todo
+        err := rows.Scan(
+            &todo.ID,
+            &todo.Title,
+            &todo.Description,
+            &todo.Completed,
+            &todo.Priority,
+            &todo.CreatedAt,
+            &todo.UpdatedAt,
+        )
+        if err != nil {
+            continue
+        }
+        todos = append(todos, todo)
+    }
 
-	if todos == nil {
-		todos = []Todo{}
-	}
+    if todos == nil {
+        todos = []Todo{}
+    }
 
-	response := APIResponse{
-		Success: true,
-		Message: "Todos retrieved successfully",
-		Data:    todos,
-		Count:   len(todos),
-	}
+    response := APIResponse{
+        Success: true,
+        Message: "Todos retrieved successfully",
+        Data:    todos,
+        Count:   len(todos),
+    }
 
-	// Step 3 - Store in Redis for 30 seconds
-	// Next request within 30s will be served from cache
-	responseJSON, _ := json.Marshal(response)
-	rdb.Set(ctx, cacheKey, responseJSON, 30*time.Second)
-	fmt.Println("💾 Stored in Redis cache for 30 seconds")
+    // Only cache if Redis available
+    if rdb != nil {
+        responseJSON, _ := json.Marshal(response)
+        rdb.Set(ctx, cacheKey, responseJSON, 30*time.Second)
+    }
 
-	sendJSON(w, http.StatusOK, response)
+    sendJSON(w, http.StatusOK, response)
 }
 
 // ============================================================
@@ -362,8 +363,10 @@ func getTodos(w http.ResponseWriter, r *http.Request) {
 // Called after create, update, delete so cache stays fresh
 // ============================================================
 func invalidateCache() {
-	rdb.Del(ctx, "todos:all")
-	fmt.Println("🗑️  Cache invalidated")
+    if rdb != nil {
+        rdb.Del(ctx, "todos:all")
+        fmt.Println("🗑️ Cache invalidated")
+    }
 }
 
 // ============================================================
