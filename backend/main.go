@@ -48,19 +48,25 @@ var ctx = context.Background() // Redis needs a context
 // CONNECT TO POSTGRESQL
 // ============================================================
 func connectDB() {
-    // Load .env file if it exists (local dev only)
     godotenv.Load()
 
-    connStr := fmt.Sprintf(
-        "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-        os.Getenv("DB_HOST"),
-        os.Getenv("DB_PORT"),
-        os.Getenv("DB_USER"),
-        os.Getenv("DB_PASSWORD"),
-        os.Getenv("DB_NAME"),
-    )
+    // Railway provides DATABASE_URL automatically
+    // Fall back to individual variables for local dev
+    connStr := os.Getenv("DATABASE_URL")
+    
+    if connStr == "" {
+        // Local dev - build from individual variables
+        connStr = fmt.Sprintf(
+            "host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+            os.Getenv("DB_HOST"),
+            os.Getenv("DB_PORT"),
+            os.Getenv("DB_USER"),
+            os.Getenv("DB_PASSWORD"),
+            os.Getenv("DB_NAME"),
+        )
+    }
 
-    var err error  // declare err properly here
+    var err error
     db, err = sql.Open("postgres", connStr)
     if err != nil {
         log.Fatal("Error connecting to database:", err)
