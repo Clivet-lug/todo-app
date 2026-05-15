@@ -8,248 +8,221 @@ import { saveAuth } from "../lib/auth";
 import { AuthResponse } from "../types";
 
 export default function LoginPage() {
-    const router = useRouter();
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError("");
-        setLoading(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await authAPI.login(email, password);
+      if (res.success && res.data) {
+        const { token, user } = res.data as AuthResponse;
+        saveAuth(token, user);
+        router.replace("/dashboard");
+      } else {
+        setError(res.message || "Login failed");
+      }
+    } catch {
+      setError("Cannot reach server. Is the API running?");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-        try {
-            const res = await authAPI.login(email, password);
-            if (res.success && res.data) {
-                const { token, user } = res.data as AuthResponse;
-                saveAuth(token, user);
-                router.replace("/dashboard");
-            } else {
-                setError(res.message || "Login failed");
-            }
-        } catch {
-            setError("Cannot reach server. Is the API running?");
-        } finally {
-            setLoading(false);
-        }
-    };
+  return (
+    <div className="root">
+      <div className="card">
+        <div className="brand">
+          <div className="brand-mark">T</div>
+          <span className="brand-name">Taskflow</span>
+        </div>
 
-    return (
-        <div className="auth-root">
-            <div className="auth-grid-bg" />
+        <h1 className="heading">Welcome back</h1>
+        <p className="subtext">Sign in to your account to continue</p>
 
-            <div className="auth-card">
-                {/* Brand mark */}
-                <div className="auth-brand">
-                    <span className="auth-brand-icon">▣</span>
-                    <span className="auth-brand-name">TASKFLOW</span>
-                </div>
+        {error && <div className="error">{error}</div>}
 
-                <h1 className="auth-heading">Sign in</h1>
-                <p className="auth-sub">Enter your credentials to continue</p>
+        <form onSubmit={handleSubmit} className="form">
+          <div className="field">
+            <label className="label">Email address</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="input"
+              placeholder="you@example.com"
+              required
+              autoFocus
+            />
+          </div>
+          <div className="field">
+            <label className="label">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="input"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <button type="submit" className="btn" disabled={loading}>
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
 
-                {error && <div className="auth-error">{error}</div>}
+        <p className="footer">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="link">Create one</Link>
+        </p>
+      </div>
 
-                <form onSubmit={handleSubmit} className="auth-form">
-                    <div className="auth-field">
-                        <label className="auth-label">Email</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={e => setEmail(e.target.value)}
-                            className="auth-input"
-                            placeholder="you@example.com"
-                            required
-                            autoFocus
-                        />
-                    </div>
-
-                    <div className="auth-field">
-                        <label className="auth-label">Password</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={e => setPassword(e.target.value)}
-                            className="auth-input"
-                            placeholder="••••••••"
-                            required
-                        />
-                    </div>
-
-                    <button type="submit" className="auth-btn" disabled={loading}>
-                        {loading ? "Signing in…" : "Sign in →"}
-                    </button>
-                </form>
-
-                <p className="auth-footer">
-                    No account?{" "}
-                    <Link href="/register" className="auth-link">
-                        Create one
-                    </Link>
-                </p>
-            </div>
-
-            <style jsx>{`
-        .auth-root {
+      <style jsx>{`
+        .root {
           min-height: 100vh;
-          background: #0c0c0f;
+          background: #f8f9fa;
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 2rem;
-          position: relative;
-          overflow: hidden;
+          padding: 1.5rem;
         }
 
-        .auth-grid-bg {
-          position: absolute;
-          inset: 0;
-          background-image:
-            linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-          background-size: 40px 40px;
-        }
-
-        .auth-card {
-          position: relative;
+        .card {
           width: 100%;
           max-width: 400px;
-          background: #141418;
-          border: 1px solid #2a2a35;
-          border-radius: 4px;
+          background: #ffffff;
+          border: 1px solid #e9ecef;
+          border-radius: 12px;
           padding: 2.5rem;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
         }
 
-        .auth-brand {
+        .brand {
           display: flex;
           align-items: center;
           gap: 0.5rem;
           margin-bottom: 2rem;
         }
 
-        .auth-brand-icon {
-          font-size: 1.2rem;
-          color: #7c6af7;
-        }
-
-        .auth-brand-name {
-          font-family: 'Courier New', monospace;
-          font-size: 0.75rem;
+        .brand-mark {
+          width: 28px;
+          height: 28px;
+          background: #c0392b;
+          color: #fff;
+          border-radius: 6px;
+          font-size: 0.8rem;
           font-weight: 700;
-          letter-spacing: 0.2em;
-          color: #7c6af7;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--font-sans);
         }
 
-        .auth-heading {
-          font-family: 'Georgia', serif;
-          font-size: 1.75rem;
+        .brand-name {
+          font-size: 0.95rem;
+          font-weight: 600;
+          color: #0f0f0f;
+          letter-spacing: -0.01em;
+        }
+
+        .heading {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #0f0f0f;
+          letter-spacing: -0.03em;
+          margin-bottom: 0.35rem;
+          line-height: 1.2;
+        }
+
+        .subtext {
+          font-size: 0.875rem;
+          color: #868e96;
+          margin-bottom: 1.75rem;
           font-weight: 400;
-          color: #f0f0f5;
-          margin: 0 0 0.25rem;
-          letter-spacing: -0.02em;
         }
 
-        .auth-sub {
-          font-size: 0.8rem;
-          color: #555568;
-          margin: 0 0 1.75rem;
-          font-family: 'Courier New', monospace;
-        }
-
-        .auth-error {
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid rgba(239, 68, 68, 0.3);
-          color: #f87171;
-          font-size: 0.8rem;
-          padding: 0.75rem 1rem;
-          border-radius: 2px;
+        .error {
+          background: #fff5f5;
+          border: 1px solid #ffc9c9;
+          color: #c92a2a;
+          font-size: 0.825rem;
+          padding: 0.7rem 0.9rem;
+          border-radius: 8px;
           margin-bottom: 1.25rem;
-          font-family: 'Courier New', monospace;
         }
 
-        .auth-form {
+        .form {
           display: flex;
           flex-direction: column;
           gap: 1rem;
         }
 
-        .auth-field {
+        .field {
           display: flex;
           flex-direction: column;
           gap: 0.4rem;
         }
 
-        .auth-label {
-          font-size: 0.7rem;
-          font-weight: 600;
-          letter-spacing: 0.12em;
-          color: #555568;
-          text-transform: uppercase;
-          font-family: 'Courier New', monospace;
+        .label {
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: #495057;
         }
 
-        .auth-input {
-          background: #0c0c0f;
-          border: 1px solid #2a2a35;
-          border-radius: 2px;
+        .input {
+          background: #f8f9fa;
+          border: 1.5px solid #e9ecef;
+          border-radius: 8px;
           padding: 0.65rem 0.85rem;
-          font-size: 0.875rem;
-          color: #f0f0f5;
+          font-size: 0.9rem;
+          color: #0f0f0f;
           outline: none;
-          transition: border-color 0.15s;
-          font-family: 'Courier New', monospace;
+          transition: border-color 0.15s, box-shadow 0.15s;
+          font-family: var(--font-sans);
+          width: 100%;
         }
 
-        .auth-input::placeholder {
-          color: #33333f;
+        .input::placeholder { color: #ced4da; }
+
+        .input:focus {
+          border-color: #c0392b;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(192,57,43,0.08);
         }
 
-        .auth-input:focus {
-          border-color: #7c6af7;
-        }
-
-        .auth-btn {
-          margin-top: 0.5rem;
-          background: #7c6af7;
+        .btn {
+          margin-top: 0.25rem;
+          background: #0f0f0f;
           color: #fff;
           border: none;
-          border-radius: 2px;
+          border-radius: 8px;
           padding: 0.75rem;
-          font-size: 0.8rem;
-          font-weight: 700;
-          letter-spacing: 0.08em;
+          font-size: 0.875rem;
+          font-weight: 600;
           cursor: pointer;
-          font-family: 'Courier New', monospace;
+          font-family: var(--font-sans);
           transition: background 0.15s, opacity 0.15s;
+          letter-spacing: -0.01em;
         }
 
-        .auth-btn:hover:not(:disabled) {
-          background: #6a58e5;
-        }
+        .btn:hover:not(:disabled) { background: #c0392b; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .auth-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .auth-footer {
+        .footer {
           margin-top: 1.5rem;
-          font-size: 0.78rem;
-          color: #555568;
+          font-size: 0.825rem;
+          color: #868e96;
           text-align: center;
-          font-family: 'Courier New', monospace;
         }
 
-        .auth-link {
-          color: #7c6af7;
-          text-decoration: none;
-        }
-
-        .auth-link:hover {
-          text-decoration: underline;
-        }
+        .link { color: #c0392b; text-decoration: none; font-weight: 500; }
+        .link:hover { text-decoration: underline; }
       `}</style>
-        </div>
-    );
+    </div>
+  );
 }
