@@ -29,7 +29,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── Validation ────────────────────────────────────────────────────────────
+	// Validation
 	req.Name = strings.TrimSpace(req.Name)
 	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	req.Password = strings.TrimSpace(req.Password)
@@ -54,7 +54,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		role = "member"
 	}
 
-	// ── Hash password ─────────────────────────────────────────────────────────
+	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		utils.SendJSON(w, http.StatusInternalServerError, models.APIResponse{
@@ -64,7 +64,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── Persist user ──────────────────────────────────────────────────────────
+	// Persist user
 	db := databases.ConnectDB()
 	defer db.Close()
 
@@ -72,6 +72,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	user, err := userRepo.CreateUser(req.Name, req.Email, string(hash), role)
 	if err != nil {
 		// Postgres unique_violation code is "23505"
+		// refactor ()
 		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
 			utils.SendJSON(w, http.StatusConflict, models.APIResponse{
 				Success: false,
@@ -86,7 +87,7 @@ func Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── Issue token ───────────────────────────────────────────────────────────
+	// Issue token 
 	token, err := auth.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		utils.SendJSON(w, http.StatusInternalServerError, models.APIResponse{

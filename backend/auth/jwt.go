@@ -12,7 +12,7 @@ import (
 type Claims struct {
 	UserID int    `json:"user_id"`
 	Email  string `json:"email"`
-	Role   string `json:"role"` // "admin" | "member"
+	Role   string `json:"role"` 
 	jwt.RegisteredClaims
 }
 
@@ -20,7 +20,7 @@ type Claims struct {
 func jwtSecret() []byte {
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		// Fallback for local dev only — always set this in production
+		// Fallback for local dev
 		secret = "dev-secret-change-me"
 	}
 	return []byte(secret)

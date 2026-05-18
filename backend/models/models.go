@@ -2,18 +2,17 @@ package models
 
 import "time"
 
-// ─── USER ────────────────────────────────────────────────────────────────────
-
+// USER
 type User struct {
 	ID        int       `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Password  string    `json:"-"` // never sent in JSON responses
-	Role      string    `json:"role"` // "admin" | "member"
+	Role      string    `json:"role"` // admin or member
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ─── TODO ────────────────────────────────────────────────────────────────────
+// TODO 
 
 // WorkflowStatus represents the four pipeline stages
 type WorkflowStatus string
@@ -38,7 +37,7 @@ type Todo struct {
 	Title       string         `json:"title"`
 	Description string         `json:"description"`
 	Completed   bool           `json:"completed"`   // kept for backward compat; mirrors status==done
-	Priority    string         `json:"priority"`    // "low" | "medium" | "high"
+	Priority    string         `json:"priority"`    // low | medium | high
 	Status      WorkflowStatus `json:"status"`      // workflow stage
 	AssignedTo  *int           `json:"assigned_to"` // nullable user ID
 	AssignedBy  *int           `json:"assigned_by"` // nullable user ID (admin who assigned)
@@ -54,13 +53,12 @@ type UserSummary struct {
 	Email string `json:"email"`
 }
 
-// ─── AUTH ─────────────────────────────────────────────────────────────────────
-
+// AUTH
 type RegisterRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
-	Role     string `json:"role"` // optional; defaults to "member"
+	Role     string `json:"role"` // optional; defaults to member
 }
 
 type LoginRequest struct {
@@ -73,8 +71,7 @@ type AuthResponse struct {
 	User  User   `json:"user"`
 }
 
-// ─── API RESPONSE ────────────────────────────────────────────────────────────
-
+// API RESPONSE
 type APIResponse struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message"`

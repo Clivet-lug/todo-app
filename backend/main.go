@@ -23,6 +23,7 @@ import (
 var rdb *redis.Client
 var ctx = context.Background()
 
+// Put it in middleware
 func withCORS(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

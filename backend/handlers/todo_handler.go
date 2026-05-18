@@ -13,7 +13,7 @@ import (
 	"github.com/Clivet-lug/todo-app/backend/utils"
 )
 
-// ─── GET ALL TODOS ────────────────────────────────────────────────────────────
+// GET ALL TODOS
 // Admins see everything. Members see only their assigned todos.
 // GET /todos
 func GetTodos(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +44,7 @@ func GetTodos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ─── GET SINGLE TODO ──────────────────────────────────────────────────────────
+// GET SINGLE TODO
 // GET /todos/{id}
 func GetTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 	claims := middleware.GetClaims(r)
@@ -79,7 +79,7 @@ func GetTodoByID(w http.ResponseWriter, r *http.Request, id int) {
 	})
 }
 
-// ─── CREATE TODO ──────────────────────────────────────────────────────────────
+// CREATE TODO
 // Admin only. POST /todos
 func CreateTodo(w http.ResponseWriter, r *http.Request) {
 	var input models.Todo
@@ -147,7 +147,7 @@ func CreateTodo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ─── UPDATE TODO ──────────────────────────────────────────────────────────────
+// UPDATE TODO
 // Admin only (title, description, priority edits). PUT /todos/{id}
 func UpdateTodo(w http.ResponseWriter, r *http.Request, id int) {
 	var input models.Todo
@@ -204,7 +204,7 @@ func UpdateTodo(w http.ResponseWriter, r *http.Request, id int) {
 	})
 }
 
-// ─── DELETE TODO ──────────────────────────────────────────────────────────────
+// DELETE TODO
 // Admin only. DELETE /todos/{id}
 func DeleteTodo(w http.ResponseWriter, r *http.Request, id int) {
 	db := databases.ConnectDB()
@@ -234,9 +234,8 @@ func DeleteTodo(w http.ResponseWriter, r *http.Request, id int) {
 	})
 }
 
-// ─── ASSIGN TODO ──────────────────────────────────────────────────────────────
+// ASSIGN TODO
 // Admin only. PUT /todos/{id}/assign
-// Body: { "assigned_to": 3 }
 func AssignTodo(w http.ResponseWriter, r *http.Request, id int) {
 	claims := middleware.GetClaims(r)
 
@@ -288,7 +287,7 @@ func AssignTodo(w http.ResponseWriter, r *http.Request, id int) {
 	})
 }
 
-// ─── UPDATE STATUS ────────────────────────────────────────────────────────────
+// UPDATE STATUS
 // Members update their own assigned todos; admins can update any.
 // PUT /todos/{id}/status
 // Body: { "status": "in_progress" }

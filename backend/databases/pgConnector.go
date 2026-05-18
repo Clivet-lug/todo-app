@@ -39,6 +39,6 @@ func ConnectDB() *sql.DB {
 		log.Fatal("Cannot reach database:", err)
 	}
 
-	fmt.Println("✅ Connected to PostgreSQL successfully")
+	fmt.Println("Connected to PostgreSQL successfully")
 	return db
 }
