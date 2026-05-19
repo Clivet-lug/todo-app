@@ -8,29 +8,25 @@ import (
 	"github.com/Clivet-lug/todo-app/backend/models"
 )
 
-// UserRepository handles all DB operations for users.
-type UserRepository struct {
-	DB *sql.DB
+type userRepository struct {
+	db *sql.DB
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
-	return &UserRepository{DB: db}
+func NewUserRepository(db *sql.DB) *userRepository {
+	return &userRepository{db: db}
 }
 
-// CreateUsersTable creates the users table if it doesn't exist.
-// Call this once at startup, before CreateTodosTable (todos references users).
-func (u *UserRepository) CreateUsersTable() error {
-	query := `
+func (r *userRepository) CreateUsersTable() error {
+	_, err := r.db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			id         SERIAL PRIMARY KEY,
 			name       VARCHAR(255) NOT NULL,
 			email      VARCHAR(255) NOT NULL UNIQUE,
-			password   VARCHAR(255) NOT NULL,  -- bcrypt hash
+			password   VARCHAR(255) NOT NULL,
 			role       VARCHAR(50)  NOT NULL DEFAULT 'member',
-			created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
-	`
-	_, err := u.DB.Exec(query)
+	`)
 	if err != nil {
 		log.Print("Error creating users table:", err)
 		return err
@@ -39,20 +35,14 @@ func (u *UserRepository) CreateUsersTable() error {
 	return nil
 }
 
-// CreateUser inserts a new user and returns the created record.
-// The password field should already be a bcrypt hash before calling this.
-func (u *UserRepository) CreateUser(name, email, hashedPassword, role string) (*models.User, error) {
+func (r *userRepository) CreateUser(name, email, hashedPassword, role string) (*models.User, error) {
 	var user models.User
-	err := u.DB.QueryRow(`
+	err := r.db.QueryRow(`
 		INSERT INTO users (name, email, password, role)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id, name, email, role, created_at
 	`, name, email, hashedPassword, role).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Role,
-		&user.CreatedAt,
+		&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating user: %w", err)
@@ -60,20 +50,13 @@ func (u *UserRepository) CreateUser(name, email, hashedPassword, role string) (*
 	return &user, nil
 }
 
-// FindByEmail looks up a user by email address.
-// Returns sql.ErrNoRows (wrapped) if not found.
-func (u *UserRepository) FindByEmail(email string) (*models.User, error) {
+func (r *userRepository) FindByEmail(email string) (*models.User, error) {
 	var user models.User
-	err := u.DB.QueryRow(`
+	err := r.db.QueryRow(`
 		SELECT id, name, email, password, role, created_at
 		FROM users WHERE email = $1
 	`, email).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Password,
-		&user.Role,
-		&user.CreatedAt,
+		&user.ID, &user.Name, &user.Email, &user.Password, &user.Role, &user.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user not found")
@@ -84,18 +67,13 @@ func (u *UserRepository) FindByEmail(email string) (*models.User, error) {
 	return &user, nil
 }
 
-// FindByID looks up a user by primary key.
-func (u *UserRepository) FindByID(id int) (*models.User, error) {
+func (r *userRepository) FindByID(id int) (*models.User, error) {
 	var user models.User
-	err := u.DB.QueryRow(`
+	err := r.db.QueryRow(`
 		SELECT id, name, email, role, created_at
 		FROM users WHERE id = $1
 	`, id).Scan(
-		&user.ID,
-		&user.Name,
-		&user.Email,
-		&user.Role,
-		&user.CreatedAt,
+		&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("user with ID %d not found", id)
@@ -106,13 +84,10 @@ func (u *UserRepository) FindByID(id int) (*models.User, error) {
 	return &user, nil
 }
 
-// ListMembers returns all users with the "member" role.
-// Useful for the admin assignment UI.
-func (u *UserRepository) ListMembers() ([]*models.User, error) {
-	rows, err := u.DB.Query(`
+func (r *userRepository) ListMembers() ([]*models.User, error) {
+	rows, err := r.db.Query(`
 		SELECT id, name, email, role, created_at
-		FROM users WHERE role = 'member'
-		ORDER BY name ASC
+		FROM users WHERE role = 'member' ORDER BY name ASC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("error listing members: %w", err)
@@ -121,11 +96,11 @@ func (u *UserRepository) ListMembers() ([]*models.User, error) {
 
 	var users []*models.User
 	for rows.Next() {
-		var user models.User
-		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt); err != nil {
+		var u models.User
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.CreatedAt); err != nil {
 			continue
 		}
-		users = append(users, &user)
+		users = append(users, &u)
 	}
 	return users, nil
 }
